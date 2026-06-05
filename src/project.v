@@ -15,7 +15,7 @@ parameter DISPLAY_HEIGHT = 480;
 
 `define COLOR_WHITE 3'd7
 
-module tt_fer_logo_music_vga (
+module tt_um_fer_logo_music_vga (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
