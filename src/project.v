@@ -4,13 +4,13 @@
  */
 `default_nettype none
 
-parameter LOGO_SIZE     = 128;
-parameter DISPLAY_WIDTH  = 640;
-parameter DISPLAY_HEIGHT = 480;
-
 `define COLOR_WHITE 3'd7
 
 module tt_um_vga_example (
+  parameter LOGO_SIZE     = 128;
+  parameter DISPLAY_WIDTH  = 640;
+  parameter DISPLAY_HEIGHT = 480;
+  
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
