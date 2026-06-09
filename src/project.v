@@ -1,21 +1,16 @@
 /*
- * FER logo (video) + Gaudeamus Igitur (audio) - combined design
- * Logo display by Uri Shaked (c) 2024 Tiny Tapeout LTD, Apache-2.0
- * Audio: Gaudeamus Igitur melody extracted from MIDI, 1-bit square wave
- *
- * Needs these other files in the playground: bitmap_rom.v (FER logo), palette.v
- * Author: Daniel Hofman
+ * FER Logo (bouncing) + Gaudeamus Igitur (Brahms) audio
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 `default_nettype none
 
-parameter LOGO_SIZE = 128;
-parameter DISPLAY_WIDTH = 640;
+parameter LOGO_SIZE     = 128;
+parameter DISPLAY_WIDTH  = 640;
 parameter DISPLAY_HEIGHT = 480;
 
 `define COLOR_WHITE 3'd7
 
-module tt_um_fer_logo_music_vga (
+module tt_um_vga_example (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
@@ -26,127 +21,40 @@ module tt_um_fer_logo_music_vga (
     input  wire       rst_n
 );
 
-  // VGA signals
-  wire hsync;
-  wire vsync;
-  reg [1:0] R;
-  reg [1:0] G;
-  reg [1:0] B;
-  wire video_active;
-  wire [9:0] pix_x;
-  wire [9:0] pix_y;
+  // ── VGA signals ────────────────────────────────────────────────
+  wire hsync, vsync, video_active;
+  wire [9:0] pix_x, pix_y;
+  reg  [1:0] R, G, B;
 
-  // Configuration
-  wire cfg_tile  = ui_in[0];
-  wire cfg_color = ui_in[1];
+  wire cfg_tile = ui_in[0];
+  wire btn_left  = ui_in[2];
+  wire btn_right = ui_in[3];
+  wire btn_up    = ui_in[4];
+  wire btn_down  = ui_in[5];
 
-  // Audio signal (Gaudeamus melody)
+  // ── Audio output on uio, RGB on uo ────────────────────────────
   wire sound;
-
-  // TinyVGA PMOD - video shows the FER logo
   assign uo_out  = {hsync, B[0], G[0], R[0], vsync, B[1], G[1], R[1]};
-
-  // Audio on uio[7] (Tiny Tapeout audio PMOD)
   assign uio_out = {sound, 7'b0};
   assign uio_oe  = 8'hff;
 
-  wire _unused_ok = &{ena, ui_in[7:1], uio_in};
-  // List all unused inputs to prevent warnings
-  // wire _unused = &{ena, clk, rst_n, 1'b0};
+  wire _unused_ok = &{ena, ui_in[7:6], ui_in[1], uio_in};
 
-
-  reg [9:0] prev_y;
-
+  // ── HVSync ────────────────────────────────────────────────────
   hvsync_generator vga_sync_gen (
-      .clk(clk),
-      .reset(~rst_n),
-      .hsync(hsync),
-      .vsync(vsync),
+      .clk(clk), .reset(~rst_n),
+      .hsync(hsync), .vsync(vsync),
       .display_on(video_active),
-      .hpos(pix_x),
-      .vpos(pix_y)
+      .hpos(pix_x), .vpos(pix_y)
   );
 
-  // ============================ FER LOGO (video) ============================
-  reg [9:0] logo_left;
-  reg [9:0] logo_top;
-  reg dir_x;
-  reg dir_y;
+  // ── Tick signals (shared with audio) ──────────────────────────
+  wire frame_tick = (pix_x == 0) && (pix_y == 0);  // ~60 Hz
+  wire line_tick  = (pix_x == 0);                   // ~31.5 kHz
 
-  wire pixel_value;
-  reg [2:0] color_index;
-  wire [5:0] color;
-
-  wire [9:0] x = pix_x - logo_left;
-  wire [9:0] y = pix_y - logo_top;
-  wire logo_pixels = cfg_tile || (x[9:7] == 0 && y[9:7] == 0);
-
-  bitmap_rom rom1 (
-      .x(x[6:0]),
-      .y(y[6:0]),
-      .pixel(pixel_value)
-  );
-
-  palette palette_inst (
-      .color_index(cfg_color ? color_index : `COLOR_WHITE),
-      .rrggbb(color)
-  );
-
-  // RGB output logic
-  always @(posedge clk) begin
-    if (~rst_n) begin
-      R <= 0;
-      G <= 0;
-      B <= 0;
-    end else begin
-      R <= 0;
-      G <= 0;
-      B <= 0;
-      if (video_active && logo_pixels) begin
-        R <= pixel_value ? color[5:4] : 0;
-        G <= pixel_value ? color[3:2] : 0;
-        B <= pixel_value ? color[1:0] : 0;
-      end
-    end
-  end
-
-  // Bouncing logic
-  always @(posedge clk) begin
-    if (~rst_n) begin
-      logo_left <= 200;
-      logo_top <= 200;
-      dir_y <= 0;
-      dir_x <= 1;
-      color_index <= 0;
-    end else begin
-      prev_y <= pix_y;
-      if (pix_y == 0 && prev_y != pix_y) begin
-        logo_left <= logo_left + (dir_x ? 1 : -1);
-        logo_top  <= logo_top + (dir_y ? 1 : -1);
-        if (logo_left - 1 == 0 && !dir_x) begin
-          dir_x <= 1;
-          color_index <= color_index + 1;
-        end
-        if (logo_left + 1 == DISPLAY_WIDTH - LOGO_SIZE && dir_x) begin
-          dir_x <= 0;
-          color_index <= color_index + 1;
-        end
-        if (logo_top - 1 == 0 && !dir_y) begin
-          dir_y <= 1;
-          color_index <= color_index + 1;
-        end
-        if (logo_top + 1 == DISPLAY_HEIGHT - LOGO_SIZE && dir_y) begin
-          dir_y <= 0;
-          color_index <= color_index + 1;
-        end
-      end
-    end
-  end
-
-  // ========================= GAUDEAMUS IGITUR (audio) =========================
-  wire frame_tick = (pix_x == 0) && (pix_y == 0);   // 60 Hz note clock
-  wire line_tick  = (pix_x == 0);                   // 31.5 kHz oscillator clock
-
+  // ══════════════════════════════════════════════════════════════
+  //  GAUDEAMUS AUDIO
+  // ══════════════════════════════════════════════════════════════
   reg [9:0] rom_per [0:111];
   reg [9:0] rom_dur [0:111];
   reg [6:0] ptr;
@@ -154,27 +62,23 @@ module tt_um_fer_logo_music_vga (
   wire [9:0] cur_per = rom_per[ptr];
 
   always @(posedge clk) begin
-    if (~rst_n) begin
-      ptr <= 0; tnote <= 0;
-    end else if (frame_tick) begin
+    if (~rst_n) begin ptr <= 0; tnote <= 0; end
+    else if (frame_tick) begin
       if (tnote + 1 >= rom_dur[ptr]) begin
         tnote <= 0; ptr <= (ptr == 111) ? 0 : ptr + 1'b1;
       end else tnote <= tnote + 1'b1;
     end
   end
 
-  reg [9:0] cnt;
-  reg wave;
+  reg [9:0] cnt; reg wave;
   always @(posedge clk) begin
-    if (~rst_n) begin
-      cnt <= 0; wave <= 0;
-    end else if (line_tick) begin
+    if (~rst_n) begin cnt <= 0; wave <= 0; end
+    else if (line_tick) begin
       if (cur_per == 0) begin cnt <= 0; wave <= 0; end
       else if (cnt + 1 >= cur_per) begin cnt <= 0; wave <= ~wave; end
       else cnt <= cnt + 1'b1;
     end
   end
-
   assign sound = wave;
 
   initial begin
@@ -290,6 +194,100 @@ module tt_um_fer_logo_music_vga (
     rom_per[109] = 10'd0; rom_dur[109] = 10'd2;
     rom_per[110] = 10'd15; rom_dur[110] = 10'd57;
     rom_per[111] = 10'd30; rom_dur[111] = 10'd163;
+  end
+
+  // ══════════════════════════════════════════════════════════════
+  //  FER LOGO (bouncing)
+  // ══════════════════════════════════════════════════════════════
+  reg [9:0] logo_left, logo_top;
+  reg dir_x, dir_y;
+  reg [2:0] color_index;
+
+  wire pixel_value;
+  wire [5:0] color;
+
+  wire [9:0] lx = pix_x - logo_left;
+  wire [9:0] ly = pix_y - logo_top;
+  wire logo_pixels = cfg_tile || (lx[9:7] == 0 && ly[9:7] == 0);
+
+  bitmap_rom rom_inst (
+      .x(lx[6:0]),
+      .y(ly[6:0]),
+      .pixel(pixel_value)
+  );
+
+  palette palette_inst (
+      .color_index(color_index),
+      .rrggbb(color)
+  );
+
+  // RGB output
+  always @(posedge clk) begin
+    if (~rst_n) begin R <= 0; G <= 0; B <= 0; end
+    else begin
+      R <= 0; G <= 0; B <= 0;
+      if (video_active && logo_pixels) begin
+        R <= pixel_value ? color[5:4] : 0;
+        G <= pixel_value ? color[3:2] : 0;
+        B <= pixel_value ? color[1:0] : 0;
+      end
+    end
+  end
+
+  // Bouncing logic
+  localparam X_MAX = DISPLAY_WIDTH  - LOGO_SIZE;  // 512
+  localparam Y_MAX = DISPLAY_HEIGHT - LOGO_SIZE;  // 352
+
+  reg [9:0] prev_y;
+  reg       bounced_last;  // sprjecava visestruku promjenu boje na istom rubu
+
+  always @(posedge clk) begin
+    if (~rst_n) begin
+      logo_left    <= 200;
+      logo_top     <= 200;
+      dir_x        <= 1;
+      dir_y        <= 0;
+      color_index  <= 0;
+      prev_y       <= 0;
+      bounced_last <= 0;
+    end else begin
+      prev_y <= pix_y;
+      if (pix_y == 0 && prev_y != 0) begin
+
+        if (btn_left | btn_right | btn_up | btn_down) begin
+          if      (btn_left  && logo_left > 0)     logo_left <= logo_left - 1;
+          else if (btn_right && logo_left < X_MAX) logo_left <= logo_left + 1;
+          if      (btn_up    && logo_top  > 0)     logo_top  <= logo_top  - 1;
+          else if (btn_down  && logo_top  < Y_MAX) logo_top  <= logo_top  + 1;
+          bounced_last <= 0;
+
+        end else begin
+          // Pomak uz hard clamp
+          logo_left <= dir_x ? (logo_left < X_MAX ? logo_left + 1 : logo_left)
+                             : (logo_left > 0     ? logo_left - 1 : logo_left);
+          logo_top  <= dir_y ? (logo_top  < Y_MAX ? logo_top  + 1 : logo_top)
+                             : (logo_top  > 0     ? logo_top  - 1 : logo_top);
+
+          // Detekcija ruba - okreni smjer
+          if (logo_left <= 1)          dir_x <= 1;
+          if (logo_left >= X_MAX - 1)  dir_x <= 0;
+          if (logo_top  <= 1)          dir_y <= 1;
+          if (logo_top  >= Y_MAX - 1)  dir_y <= 0;
+
+          // Promjena boje samo jednom pri odbijanju (edge detect)
+          if (logo_left <= 1 || logo_left >= X_MAX-1 ||
+              logo_top  <= 1 || logo_top  >= Y_MAX-1) begin
+            if (!bounced_last) begin
+              color_index  <= color_index + 1;
+              bounced_last <= 1;
+            end
+          end else begin
+            bounced_last <= 0;
+          end
+        end
+
+      end
+    end
   end
 
 endmodule
