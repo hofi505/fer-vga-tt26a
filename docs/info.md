@@ -13,7 +13,9 @@ The project displays a FER logo and plays music
 
 ## How to test
 
-Explain how to use your project
+Connect VGA display to the VGA PMOD on the output pins.
+Use inputs 2-5 (left/right/up/down) to control the direction of the bouncing FER logo.
+Audio output is on uio[0].
 
 ## External hardware
 
