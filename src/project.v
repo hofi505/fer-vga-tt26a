@@ -31,19 +31,20 @@ module tt_um_fer_logo_music_vga  (
   reg  [1:0] R, G, B;
 
   wire cfg_tile  = ui_in[0];
-  wire btn_music = ui_in[1];   // play / pause / stop the music
+  wire btn_music = ui_in[1];   // play / pause (toggle, resumes)
   wire btn_left  = ui_in[2];
   wire btn_right = ui_in[3];
   wire btn_up    = ui_in[4];
   wire btn_down  = ui_in[5];
+  wire btn_stop  = ui_in[6];   // stop (rewind to start)
 
-  // ── Audio output on uio, RGB on uo ────────────────────────────
+  // -- Audio output on uio, RGB on uo -------------------------------
   wire sound;
   assign uo_out  = {hsync, B[0], G[0], R[0], vsync, B[1], G[1], R[1]};
   assign uio_out = {sound, 7'b0};
   assign uio_oe  = 8'hff;
 
-  wire _unused_ok = &{ena, ui_in[7:6], uio_in};
+  wire _unused_ok = &{ena, ui_in[7], uio_in};
 
   // ── HVSync ────────────────────────────────────────────────────
   hvsync_generator vga_sync_gen (
@@ -57,36 +58,27 @@ module tt_um_fer_logo_music_vga  (
   wire frame_tick = (pix_x == 0) && (pix_y == 0);  // ~60 Hz
   wire line_tick  = (pix_x == 0);                   // ~31.5 kHz
 
-  // ══════════════════════════════════════════════════════════════
-  //  MUSIC TRANSPORT CONTROL  (button ui_in[1])
-  //  Each clean press advances:  STOPPED -> PLAYING -> PAUSED -> STOPPED ...
-  //    press 1 = play (from start), press 2 = pause, press 3 = stop,
-  //    press 4 = play from start again.
-  //  ui_in[1] is synchronized + DEBOUNCED so a bouncy switch advances once.
-  // ══════════════════════════════════════════════════════════════
-  localparam [17:0] DEBOUNCE_MAX = 18'd250000;  // ~10 ms @ 25.175 MHz pixel clock
-  reg        m_s1, m_s2;        // 2-FF synchronizer for async input
-  reg        m_db, m_db_prev;   // debounced level + delayed copy (edge detect)
-  reg [17:0] m_cnt;             // how long the input held a new level
-  reg [1:0]  music_state;       // 0=STOPPED, 1=PLAYING, 2=PAUSED
+  // ================================================================
+  //  MUSIC TRANSPORT CONTROL
+  //  ui_in[1] play/pause toggle:  STOPPED/PAUSED -> PLAYING, PLAYING -> PAUSED
+  //  ui_in[6] stop:               -> STOPPED (rewinds to start)
+  //  States: 0=STOPPED, 1=PLAYING, 2=PAUSED.  Both buttons debounced.
+  // ================================================================
+  wire music_press, stop_press;
+  btn_debounce db_music (.clk(clk), .rst_n(rst_n), .btn(btn_music), .pressed(music_press));
+  btn_debounce db_stop  (.clk(clk), .rst_n(rst_n), .btn(btn_stop),  .pressed(stop_press));
+
+  reg [1:0] music_state;
   always @(posedge clk) begin
-    if (~rst_n) begin
-      m_s1 <= 1'b0; m_s2 <= 1'b0; m_db <= 1'b0; m_db_prev <= 1'b0; m_cnt <= 18'd0;
-      music_state <= 2'd0;                 // STOPPED (silent until first press)
-    end else begin
-      m_s1 <= btn_music;
-      m_s2 <= m_s1;
-      if (m_s2 == m_db)                 m_cnt <= 18'd0;
-      else if (m_cnt == DEBOUNCE_MAX) begin m_db <= m_s2; m_cnt <= 18'd0; end
-      else                              m_cnt <= m_cnt + 1'b1;
-      m_db_prev <= m_db;
-      if (m_db & ~m_db_prev)                // exactly one rising edge per press
-        music_state <= (music_state == 2'd2) ? 2'd0 : music_state + 2'd1;
-    end
+    if (~rst_n)          music_state <= 2'd0;            // STOPPED
+    else if (stop_press) music_state <= 2'd0;            // STOP -> rewind to start
+    else if (music_press)
+      music_state <= (music_state == 2'd1) ? 2'd2        // PLAYING -> PAUSED (hold)
+                                           : 2'd1;       // STOPPED/PAUSED -> PLAYING (resume)
   end
   wire playing = (music_state == 2'd1);
   wire stopped = (music_state == 2'd0);
-  // PAUSED (music_state == 2): note pointer & oscillator freeze, output muted.
+  // PAUSED (music_state == 2): pointer & oscillator freeze, output muted.
 
   // ══════════════════════════════════════════════════════════════
   //  GAUDEAMUS AUDIO
@@ -97,7 +89,7 @@ module tt_um_fer_logo_music_vga  (
   reg [9:0] tnote;
   wire [9:0] cur_per = rom_per[ptr];
 
-  // note sequencer: STOPPED -> rewind to start, PAUSED -> hold, PLAYING -> advance
+  // note sequencer: STOPPED -> rewind, PAUSED -> hold, PLAYING -> advance
   always @(posedge clk) begin
     if (~rst_n)       begin ptr <= 0; tnote <= 0; end
     else if (stopped) begin ptr <= 0; tnote <= 0; end
@@ -330,4 +322,30 @@ module tt_um_fer_logo_music_vga  (
     end
   end
 
+endmodule
+
+// ==================================================================
+//  Button debouncer: 2-FF sync + ~10 ms debounce, 1-cycle press pulse
+// ==================================================================
+module btn_debounce (
+    input  wire clk,
+    input  wire rst_n,
+    input  wire btn,
+    output wire pressed          // 1 clk high on a clean rising edge (press)
+);
+  localparam [17:0] DBMAX = 18'd250000;  // ~10 ms @ 25.175 MHz pixel clock
+  reg s1, s2, db, db_prev;
+  reg [17:0] cnt;
+  always @(posedge clk) begin
+    if (~rst_n) begin
+      s1 <= 1'b0; s2 <= 1'b0; db <= 1'b0; db_prev <= 1'b0; cnt <= 18'd0;
+    end else begin
+      s1 <= btn; s2 <= s1;
+      if (s2 == db)          cnt <= 18'd0;
+      else if (cnt == DBMAX) begin db <= s2; cnt <= 18'd0; end
+      else                   cnt <= cnt + 1'b1;
+      db_prev <= db;
+    end
+  end
+  assign pressed = db & ~db_prev;
 endmodule
