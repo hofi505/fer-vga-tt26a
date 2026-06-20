@@ -33,7 +33,7 @@ module tt_um_fer_logo_music_vga  (
   reg [1:0] R, G, B;
   wire [9:0] pix_x, pix_y;
 
-  wire cfg_color   = ui_in[1];
+  wire cfg_color   = ui_in[1];   // toggle the FER logo color (otherwise white)
   wire cfg_authors = ui_in[7];   // toggle the author credits line
 
   // Button ui_in[0] cycles the display mode on each press:
