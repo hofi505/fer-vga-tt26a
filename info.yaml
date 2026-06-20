@@ -20,7 +20,6 @@ project:
     - "project.v"
     - "hvsync_generator.v"
     - "palette.v"
-    - "hpc_rom.v"
     - "fer_rom.v"
     - "text_rom.v"
 

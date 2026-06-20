@@ -36,8 +36,8 @@ module tt_um_fer_logo_music_vga  (
   wire cfg_color   = ui_in[1];   // toggle the FER logo color (otherwise white)
   wire cfg_authors = ui_in[7];   // toggle the author credits line
 
-  // Button ui_in[0] cycles the display mode on each press:
-  //   state 0 = only FER logo  ->  1 = FER + HPC logo  ->  2 = FER tiled full screen  -> back to 0
+  // Button ui_in[0] toggles the display mode on each press:
+  //   state 0 = FER logo  ->  1 = FER tiled full screen  -> back to 0
   // ui_in[0] is synchronized and DEBOUNCED so a bouncy physical switch advances exactly once.
   localparam [17:0] DEBOUNCE_MAX = 18'd250000;  // ~10 ms at the 25.175 MHz pixel clock
   reg [1:0]  state;
@@ -64,11 +64,10 @@ module tt_um_fer_logo_music_vga  (
 
       ui0_db_prev <= ui0_db;
       if (ui0_db ^ ui0_db_prev)            // exactly one clean edge per switch flip
-        state <= (state == 2'd2) ? 2'd0 : state + 2'd1;
+        state <= (state == 2'd1) ? 2'd0 : state + 2'd1;
     end
   end
-  wire tile_mode = (state == 2'd2); // FER multiplied across the whole screen
-  wire show_hpc  = (state == 2'd1); // HPC logo visible
+  wire tile_mode = (state == 2'd1); // FER multiplied across the whole screen
 
   wire sound;
 
@@ -111,23 +110,7 @@ module tt_um_fer_logo_music_vga  (
   fer_rom rom1 (.x(x[6:0]), .y(y[5:0]), .pixel(pixel_value));
   palette palette_inst (.color_index(cfg_color ? color_index : `COLOR_WHITE), .rrggbb(color));
 
-  // ============================ HPC LOGO (color video) ============================
-  localparam HPC_W = 256;
-  localparam HPC_H = 108;
-  reg [9:0] hpc_left;
-  reg [9:0] hpc_top;
-  reg hpc_dx;
-  reg hpc_dy;
-
-  wire [9:0] hx = pix_x - hpc_left;
-  wire [9:0] hy = pix_y - hpc_top;
-  wire in_hpc = (hx[9:8] == 0) && (hy < HPC_H);      // hx < 256 && hy < 108
-  wire hpc_pixel;
-  hpc_rom hpcrom (.x(hx[7:0]), .y(hy[6:0]), .pixel(hpc_pixel));
-
-  // 1bpp now: the whole logo silhouette is drawn in blue (white merged into blue)
-  wire hpc_draw = show_hpc && in_hpc && hpc_pixel;
-  wire [5:0] hpc_color = 6'b000111;   // blue
+  // (HPC logo removed to save standard-cell area)
 
   // ===================== AUTHOR CREDITS (static text, toggled by ui_in[7]) =====================
   localparam TEXT_W    = 467;
@@ -141,7 +124,7 @@ module tt_um_fer_logo_music_vga  (
   text_rom textrom (.x(tx[8:0]), .y(ty[4:0]), .pixel(text_bit));
   wire text_draw = cfg_authors && in_text && text_bit;   // white text, shown when ui_in[7]=1
 
-  // RGB: author text on top, then HPC color sprite, then the FER logo, then black background
+  // RGB: author text on top, then the FER logo, then black background
   always @(posedge clk) begin
     if (~rst_n) begin
       R <= 0; G <= 0; B <= 0;
@@ -150,10 +133,6 @@ module tt_um_fer_logo_music_vga  (
       if (video_active) begin
         if (text_draw) begin
           R <= 2'b11; G <= 2'b11; B <= 2'b11;     // white author credits
-        end else if (hpc_draw) begin
-          R <= hpc_color[5:4];
-          G <= hpc_color[3:2];
-          B <= hpc_color[1:0];
         end else if (logo_pixels && pixel_value) begin
           R <= color[5:4];
           G <= color[3:2];
@@ -176,23 +155,6 @@ module tt_um_fer_logo_music_vga  (
         if (logo_left + 1 == DISPLAY_WIDTH - LOGO_W && dir_x) begin dir_x <= 0; color_index <= color_index + 1; end
         if (logo_top - 1 == 0 && !dir_y) begin dir_y <= 1; color_index <= color_index + 1; end
         if (logo_top + 1 == DISPLAY_HEIGHT - LOGO_H && dir_y) begin dir_y <= 0; color_index <= color_index + 1; end
-      end
-    end
-  end
-
-  // HPC logo bounces independently (reuses prev_y from the FER bounce block above)
-  always @(posedge clk) begin
-    if (~rst_n) begin
-      hpc_left <= 64; hpc_top <= 300;
-      hpc_dx <= 1; hpc_dy <= 0;
-    end else begin
-      if (pix_y == 0 && prev_y != pix_y) begin
-        hpc_left <= hpc_left + (hpc_dx ? 1 : -1);
-        hpc_top  <= hpc_top  + (hpc_dy ? 1 : -1);
-        if (hpc_left - 1 == 0 && !hpc_dx) hpc_dx <= 1;
-        if (hpc_left + 1 == DISPLAY_WIDTH - HPC_W && hpc_dx) hpc_dx <= 0;
-        if (hpc_top - 1 == 0 && !hpc_dy) hpc_dy <= 1;
-        if (hpc_top + 1 == DISPLAY_HEIGHT - HPC_H && hpc_dy) hpc_dy <= 0;
       end
     end
   end
