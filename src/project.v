@@ -113,15 +113,15 @@ module tt_um_fer_logo_music_vga  (
   // (HPC logo removed to save standard-cell area)
 
   // ===================== AUTHOR CREDITS (static text, toggled by ui_in[7]) =====================
-  localparam TEXT_W    = 467;
-  localparam TEXT_H    = 28;
-  localparam TEXT_LEFT = 86;     // centered horizontally: (640-467)/2
-  localparam TEXT_TOP  = 444;    // near the bottom of the screen
+  localparam TEXT_W    = 234;    // half size (was 467x28) to save area
+  localparam TEXT_H    = 14;
+  localparam TEXT_LEFT = 203;    // centered horizontally: (640-234)/2
+  localparam TEXT_TOP  = 458;    // near the bottom of the screen
   wire [9:0] tx = pix_x - TEXT_LEFT;
   wire [9:0] ty = pix_y - TEXT_TOP;
   wire in_text = (tx < TEXT_W) && (ty < TEXT_H);
   wire text_bit;
-  text_rom textrom (.x(tx[8:0]), .y(ty[4:0]), .pixel(text_bit));
+  text_rom textrom (.x(tx[7:0]), .y(ty[3:0]), .pixel(text_bit));
   wire text_draw = cfg_authors && in_text && text_bit;   // white text, shown when ui_in[7]=1
 
   // RGB: author text on top, then the FER logo, then black background
