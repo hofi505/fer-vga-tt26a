@@ -34,7 +34,6 @@ module tt_um_fer_logo_music_vga  (
   wire [9:0] pix_x, pix_y;
 
   wire cfg_color   = ui_in[1];   // toggle the FER logo color (otherwise white)
-  wire cfg_authors = ui_in[7];   // toggle the author credits line
 
   // Button ui_in[0] toggles the display mode on each press:
   //   state 0 = FER logo  ->  1 = FER tiled full screen  -> back to 0
@@ -75,7 +74,7 @@ module tt_um_fer_logo_music_vga  (
   assign uio_out = {sound, 7'b0};
   assign uio_oe  = 8'hff;
 
-  wire _unused_ok = &{ena, ui_in[6:2], uio_in};
+  wire _unused_ok = &{ena, ui_in[7:2], uio_in};
 
   reg [9:0] prev_y;
 
@@ -112,28 +111,16 @@ module tt_um_fer_logo_music_vga  (
 
   // (HPC logo removed to save standard-cell area)
 
-  // ===================== AUTHOR CREDITS (static text, toggled by ui_in[7]) =====================
-  localparam TEXT_W    = 234;    // half size (was 467x28) to save area
-  localparam TEXT_H    = 14;
-  localparam TEXT_LEFT = 203;    // centered horizontally: (640-234)/2
-  localparam TEXT_TOP  = 458;    // near the bottom of the screen
-  wire [9:0] tx = pix_x - TEXT_LEFT;
-  wire [9:0] ty = pix_y - TEXT_TOP;
-  wire in_text = (tx < TEXT_W) && (ty < TEXT_H);
-  wire text_bit;
-  text_rom textrom (.x(tx[7:0]), .y(ty[3:0]), .pixel(text_bit));
-  wire text_draw = cfg_authors && in_text && text_bit;   // white text, shown when ui_in[7]=1
+  // (author-credits text_rom removed to save standard-cell area)
 
-  // RGB: author text on top, then the FER logo, then black background
+  // RGB: the FER logo over a black background
   always @(posedge clk) begin
     if (~rst_n) begin
       R <= 0; G <= 0; B <= 0;
     end else begin
       R <= 0; G <= 0; B <= 0;
       if (video_active) begin
-        if (text_draw) begin
-          R <= 2'b11; G <= 2'b11; B <= 2'b11;     // white author credits
-        end else if (logo_pixels && pixel_value) begin
+        if (logo_pixels && pixel_value) begin
           R <= color[5:4];
           G <= color[3:2];
           B <= color[1:0];
