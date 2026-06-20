@@ -1,6 +1,9 @@
 /*
  * FER Logo (bouncing) + Gaudeamus Igitur (Brahms) audio
  * SPDX-License-Identifier: Apache-2.0
+ * Logo display powered by Uri Shaked (c) 2024 Tiny Tapeout LTD, Apache-2.0
+ * Audio: soprano melody only, 1-bit square wave (no bass)
+ * Needs in playground: fer_rom.v (FER logo, 128x64) + palette.v
  */
 `default_nettype none
 
@@ -27,7 +30,8 @@ module tt_um_fer_logo_music_vga  (
   wire [9:0] pix_x, pix_y;
   reg  [1:0] R, G, B;
 
-  wire cfg_tile = ui_in[0];
+  wire cfg_tile  = ui_in[0];
+  wire btn_music = ui_in[1];   // play / pause / stop the music
   wire btn_left  = ui_in[2];
   wire btn_right = ui_in[3];
   wire btn_up    = ui_in[4];
@@ -39,7 +43,7 @@ module tt_um_fer_logo_music_vga  (
   assign uio_out = {sound, 7'b0};
   assign uio_oe  = 8'hff;
 
-  wire _unused_ok = &{ena, ui_in[7:6], ui_in[1], uio_in};
+  wire _unused_ok = &{ena, ui_in[7:6], uio_in};
 
   // ── HVSync ────────────────────────────────────────────────────
   hvsync_generator vga_sync_gen (
@@ -54,6 +58,37 @@ module tt_um_fer_logo_music_vga  (
   wire line_tick  = (pix_x == 0);                   // ~31.5 kHz
 
   // ══════════════════════════════════════════════════════════════
+  //  MUSIC TRANSPORT CONTROL  (button ui_in[1])
+  //  Each clean press advances:  STOPPED -> PLAYING -> PAUSED -> STOPPED ...
+  //    press 1 = play (from start), press 2 = pause, press 3 = stop,
+  //    press 4 = play from start again.
+  //  ui_in[1] is synchronized + DEBOUNCED so a bouncy switch advances once.
+  // ══════════════════════════════════════════════════════════════
+  localparam [17:0] DEBOUNCE_MAX = 18'd250000;  // ~10 ms @ 25.175 MHz pixel clock
+  reg        m_s1, m_s2;        // 2-FF synchronizer for async input
+  reg        m_db, m_db_prev;   // debounced level + delayed copy (edge detect)
+  reg [17:0] m_cnt;             // how long the input held a new level
+  reg [1:0]  music_state;       // 0=STOPPED, 1=PLAYING, 2=PAUSED
+  always @(posedge clk) begin
+    if (~rst_n) begin
+      m_s1 <= 1'b0; m_s2 <= 1'b0; m_db <= 1'b0; m_db_prev <= 1'b0; m_cnt <= 18'd0;
+      music_state <= 2'd0;                 // STOPPED (silent until first press)
+    end else begin
+      m_s1 <= btn_music;
+      m_s2 <= m_s1;
+      if (m_s2 == m_db)                 m_cnt <= 18'd0;
+      else if (m_cnt == DEBOUNCE_MAX) begin m_db <= m_s2; m_cnt <= 18'd0; end
+      else                              m_cnt <= m_cnt + 1'b1;
+      m_db_prev <= m_db;
+      if (m_db & ~m_db_prev)                // exactly one rising edge per press
+        music_state <= (music_state == 2'd2) ? 2'd0 : music_state + 2'd1;
+    end
+  end
+  wire playing = (music_state == 2'd1);
+  wire stopped = (music_state == 2'd0);
+  // PAUSED (music_state == 2): note pointer & oscillator freeze, output muted.
+
+  // ══════════════════════════════════════════════════════════════
   //  GAUDEAMUS AUDIO
   // ══════════════════════════════════════════════════════════════
   reg [9:0] rom_per [0:111];
@@ -62,25 +97,29 @@ module tt_um_fer_logo_music_vga  (
   reg [9:0] tnote;
   wire [9:0] cur_per = rom_per[ptr];
 
+  // note sequencer: STOPPED -> rewind to start, PAUSED -> hold, PLAYING -> advance
   always @(posedge clk) begin
-    if (~rst_n) begin ptr <= 0; tnote <= 0; end
-    else if (frame_tick) begin
+    if (~rst_n)       begin ptr <= 0; tnote <= 0; end
+    else if (stopped) begin ptr <= 0; tnote <= 0; end
+    else if (playing && frame_tick) begin
       if (tnote + 1 >= rom_dur[ptr]) begin
         tnote <= 0; ptr <= (ptr == 111) ? 0 : ptr + 1'b1;
       end else tnote <= tnote + 1'b1;
     end
   end
 
+  // square-wave oscillator: STOPPED -> reset, PAUSED -> hold, PLAYING -> run
   reg [9:0] cnt; reg wave;
   always @(posedge clk) begin
-    if (~rst_n) begin cnt <= 0; wave <= 0; end
-    else if (line_tick) begin
+    if (~rst_n)       begin cnt <= 0; wave <= 0; end
+    else if (stopped) begin cnt <= 0; wave <= 0; end
+    else if (playing && line_tick) begin
       if (cur_per == 0) begin cnt <= 0; wave <= 0; end
       else if (cnt + 1 >= cur_per) begin cnt <= 0; wave <= ~wave; end
       else cnt <= cnt + 1'b1;
     end
   end
-  assign sound = wave;
+  assign sound = playing ? wave : 1'b0;   // silent while paused or stopped
 
   initial begin
     rom_per[0] = 10'd30; rom_dur[0] = 10'd40;
