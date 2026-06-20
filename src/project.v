@@ -250,7 +250,7 @@ module tt_um_fer_logo_music_vga  (
   wire [9:0] ly = pix_y - logo_top;
   wire logo_pixels = cfg_tile || (lx[9:7] == 0 && ly[9:7] == 0);
 
-  bitmap_rom rom_inst (
+  fer_rom rom_inst (
       .x(lx[6:0]),
       .y(ly[6:0]),
       .pixel(pixel_value)

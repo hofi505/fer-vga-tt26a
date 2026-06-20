@@ -1,6 +1,6 @@
 // Bitmap ROM for FER logo (128x128 monochrome, 1bpp)
 // Converted from ferlogo lq.bmp
-module bitmap_rom (
+module fer_rom (
   input wire [6:0] x,
   input wire [6:0] y,
   output wire pixel
