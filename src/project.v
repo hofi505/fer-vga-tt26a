@@ -122,14 +122,12 @@ module tt_um_fer_logo_music_vga  (
   wire [9:0] hx = pix_x - hpc_left;
   wire [9:0] hy = pix_y - hpc_top;
   wire in_hpc = (hx[9:8] == 0) && (hy < HPC_H);      // hx < 256 && hy < 108
-  wire [1:0] hpc_idx;
-  hpc_rom hpcrom (.x(hx[7:0]), .y(hy[6:0]), .idx(hpc_idx));
+  wire hpc_pixel;
+  hpc_rom hpcrom (.x(hx[7:0]), .y(hy[6:0]), .pixel(hpc_pixel));
 
-  // idx: 0=transparent, 1=blue, 2=white. Blue parts stay blue, black parts -> white.
-  wire hpc_draw = show_hpc && in_hpc && (hpc_idx != 2'd0);
-  wire [5:0] hpc_color = (hpc_idx == 2'd1) ? 6'b000111 :   // blue
-                         (hpc_idx == 2'd2) ? 6'b111111 :   // white
-                                             6'b000000;
+  // 1bpp now: the whole logo silhouette is drawn in blue (white merged into blue)
+  wire hpc_draw = show_hpc && in_hpc && hpc_pixel;
+  wire [5:0] hpc_color = 6'b000111;   // blue
 
   // ===================== AUTHOR CREDITS (static text, toggled by ui_in[7]) =====================
   localparam TEXT_W    = 467;
